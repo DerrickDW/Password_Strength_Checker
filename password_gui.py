@@ -1,14 +1,20 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import os, sys
 
-# Import your functions from your checker file
+
+def resource_path(relative_path: str) -> str:
+    # When packaged, PyInstaller puts files in a temp folder referenced by _MEIPASS
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
+
+
 from password_checker import (
     load_common_passwords,
     score_password,
     strength_label,
 )
 
-# If you added estimate_crack_times in password_checker.py, we’ll try to import it.
 try:
     from password_checker import estimate_crack_times
 except Exception:
@@ -19,22 +25,9 @@ def run_gui():
     root = tk.Tk()
     live_after_id = None
 
-    def schedule_live_update(*_):
-        nonlocal live_after_id
-        # cancel the previous scheduled run if user is still typing
-        if live_after_id is not None:
-            root.after_cancel(live_after_id)
-
-        # run check 300ms after the last keypress
-        live_after_id = root.after(300, on_check)
-        entry.bind("<KeyRelease>", schedule_live_update)
-        root.bind("<Return>", on_check)
-        entry.focus
-        print("key release fired")
-
     # Load common passwords once at startup
     try:
-        common_passwords = load_common_passwords("common_passwords.txt")
+        common_passwords = load_common_passwords(resource_path("common_passwords.txt"))
         common_loaded_msg = f"Loaded {len(common_passwords):,} common passwords."
     except FileNotFoundError:
         common_passwords = set()
@@ -42,9 +35,17 @@ def run_gui():
             "common_passwords.txt not found (common-list check disabled)."
         )
 
+    root.title("Password Strength Checker V1.0")
+    root.geometry("850x720")
+    root.minsize(800, 650)
+    root.update_idletasks()
 
-    root.title("Password Strength Checker")
-    root.geometry("640x520")
+    width = 850
+    height = 720
+    x = (root.winfo_screenwidth() // 2) - (width // 2)
+    y = (root.winfo_screenheight() // 2) - (height // 2)
+
+    root.geometry(f"{width}x{height}+{x}+{y}")
 
     pw_var = tk.StringVar()
     show_var = tk.BooleanVar(value=False)
@@ -63,7 +64,6 @@ def run_gui():
 
     ttk.Label(frm, text="Password:").grid(row=0, column=0, sticky="w")
     entry = ttk.Entry(frm, textvariable=pw_var, show="*")
-    entry.bind("<KeyRelease>", lambda e: print("KEY:", repr(e.widget.get())))
     entry.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
     frm.columnconfigure(0, weight=1)
@@ -82,13 +82,11 @@ def run_gui():
     strength_lbl = ttk.Label(root, text="Strength: —", font=("Segoe UI", 12, "bold"))
     strength_lbl.pack(anchor="w", padx=14, pady=(0, 10))
 
-    # Progress bar
     bar = ttk.Progressbar(
         root, orient="horizontal", length=400, mode="determinate", maximum=100
     )
     bar.pack(fill="x", padx=14, pady=(0, 14))
 
-    # Suggestions box
     ttk.Label(root, text="Suggestions:", font=("Segoe UI", 10, "bold")).pack(
         anchor="w", padx=14
     )
@@ -96,7 +94,6 @@ def run_gui():
     suggestions.pack(fill="both", expand=True, padx=14, pady=(6, 10))
     suggestions.config(state="disabled")
 
-    # Crack time box (optional)
     ttk.Label(root, text="Crack-time estimates:", font=("Segoe UI", 10, "bold")).pack(
         anchor="w", padx=14
     )
@@ -110,11 +107,22 @@ def run_gui():
         widget.insert(tk.END, text)
         widget.config(state="disabled")
 
-    def on_check(*_):
+    def on_check(*_, live=False):
         pw = pw_var.get()
+
+        # Empty: reset UI, no popup during live typing
         if not pw:
-            messagebox.showinfo("Missing password", "Type a password first.")
+            score_lbl.config(text="Score: —/100")
+            strength_lbl.config(text="Strength: —")
+            bar["value"] = 0
+            if not live:
+                set_text(suggestions, "")
+                set_text(crack_box, "")
             return
+
+        # Quick feedback paint before heavier work
+        score_lbl.config(text="Scoring...")
+        root.update_idletasks()
 
         score, feedback = score_password(pw, common_passwords)
         label = strength_label(score)
@@ -123,6 +131,11 @@ def run_gui():
         strength_lbl.config(text=f"Strength: {label}")
         bar["value"] = score
 
+        # Live typing: stop here (skip slow widgets)
+        if live:
+            return
+
+        # Full update (Enter/button)
         if feedback:
             set_text(suggestions, "\n".join(f"- {x}" for x in feedback))
         else:
@@ -140,6 +153,17 @@ def run_gui():
             except Exception as e:
                 set_text(crack_box, f"(Estimator error: {e})")
 
+    def schedule_live_update(*_):
+        nonlocal live_after_id
+        if live_after_id is not None:
+            try:
+                root.after_cancel(live_after_id)
+            except tk.TclError:
+                pass
+        live_after_id = root.after(150, lambda: on_check(live=True))
+
+    entry.bind("<KeyRelease>", schedule_live_update)
+
     def on_clear():
         pw_var.set("")
         score_lbl.config(text="Score: —/100")
@@ -153,11 +177,13 @@ def run_gui():
     btns = ttk.Frame(root)
     btns.pack(fill="x", padx=14, pady=(0, 14))
 
-    ttk.Button(btns, text="Check", command=on_check).pack(side="left")
+    ttk.Button(btns, text="Check", command=lambda: on_check(live=False)).pack(
+        side="left"
+    )
     ttk.Button(btns, text="Clear", command=on_clear).pack(side="left", padx=(10, 0))
 
-    # Enter triggers check
-    root.bind("<Return>", on_check)
+    # Enter triggers full check (bind once)
+    root.bind("<Return>", lambda e: on_check(live=False))
 
     entry.focus()
     root.mainloop()
