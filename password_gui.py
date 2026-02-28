@@ -15,7 +15,8 @@ except Exception:
     estimate_crack_times = None
 
 
-def run_gui() -> None:
+def run_gui():
+    root = tk.Tk()
     live_after_id = None
 
     def schedule_live_update(*_):
@@ -27,6 +28,9 @@ def run_gui() -> None:
         # run check 300ms after the last keypress
         live_after_id = root.after(300, on_check)
         entry.bind("<KeyRelease>", schedule_live_update)
+        root.bind("<Return>", on_check)
+        entry.focus
+        print("key release fired")
 
     # Load common passwords once at startup
     try:
@@ -38,7 +42,7 @@ def run_gui() -> None:
             "common_passwords.txt not found (common-list check disabled)."
         )
 
-    root = tk.Tk()
+
     root.title("Password Strength Checker")
     root.geometry("640x520")
 
@@ -59,6 +63,7 @@ def run_gui() -> None:
 
     ttk.Label(frm, text="Password:").grid(row=0, column=0, sticky="w")
     entry = ttk.Entry(frm, textvariable=pw_var, show="*")
+    entry.bind("<KeyRelease>", lambda e: print("KEY:", repr(e.widget.get())))
     entry.grid(row=1, column=0, sticky="ew", pady=(4, 0))
 
     frm.columnconfigure(0, weight=1)
