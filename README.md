@@ -1,6 +1,6 @@
 # Password Strength Checker (v1.0)
 Release v1.0 - initial desktop build
-
+Passords are evaluated locally and are not stored or transmitted
 Small personal desktop project built with Tkinter.
 
 ## Features
